@@ -1,0 +1,7 @@
+[submodule "external/sourcemod"]
+	path = external/sourcemod
+	url = https://github.com/alliedmodders/sourcemod
+	branch = 1.12-dev
+[submodule "external/LANCommander.Interposer"]
+	path = external/LANCommander.Interposer
+	url = https://github.com/LANCommander/LANCommander.Interposer

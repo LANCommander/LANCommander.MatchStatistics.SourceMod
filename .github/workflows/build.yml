@@ -1,0 +1,133 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  SOURCEMOD_BRANCH: '1.12'
+
+jobs:
+  # The extension, Windows x86 and x64.
+  windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        preset: [windows-x86, windows-x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The presets take vcpkg from VCPKG_ROOT; the runner ships a clone. The
+      # overlay triplets in triplets/ pin the v143 toolset the presets use.
+      - name: Locate vcpkg
+        shell: pwsh
+        run: '"VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append'
+
+      # The Interposer's CMake requires YY-Thunks to configure, even though the
+      # extension does not link it (srcds needs nothing from Windows XP).
+      - name: Fetch YY-Thunks
+        shell: pwsh
+        working-directory: external/LANCommander.Interposer
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File build/Get-YYThunks.ps1
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake --preset ${{ matrix.preset }}
+          cmake --build --preset ${{ matrix.preset }}-release
+
+      - name: Test
+        shell: pwsh
+        run: ctest --preset ${{ matrix.preset }}-release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.preset }}
+          path: out/${{ matrix.preset }}/bin/Release/lancommander.ext.dll
+
+  # The extension, Linux x86 and x64, in the Interposer's build image (Debian
+  # 12, multilib), so it runs on the glibc of LANCommander's server images.
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        preset: [linux-x86, linux-x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build image
+        run: docker build -f external/LANCommander.Interposer/docker/build.Dockerfile -t build external/LANCommander.Interposer/docker
+
+      - name: Build and test
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src build sh -c '
+            cmake --preset ${{ matrix.preset }} &&
+            cmake --build --preset ${{ matrix.preset }}-release &&
+            ctest --preset ${{ matrix.preset }}-release'
+
+      # Only GetSMExtAPI and the Interposer's API may be exported (exports.map).
+      - name: Check exports
+        run: |
+          unexpected=$(nm -D --defined-only out/${{ matrix.preset }}/bin/Release/lancommander.ext.so |
+            awk '{print $3}' | grep -vE '^(GetSMExtAPI|Interposer.*|interposer_comms_.*)$' || true)
+          if [ -n "$unexpected" ]; then echo "Unexpected exports:"; echo "$unexpected"; exit 1; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.preset }}
+          path: out/${{ matrix.preset }}/bin/Release/lancommander.ext.so
+
+  # Every plugin, with SourceMod's compiler, warnings as errors.
+  plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch SourceMod
+        run: |
+          name=$(curl -sSf "https://sm.alliedmods.net/smdrop/$SOURCEMOD_BRANCH/sourcemod-latest-linux")
+          mkdir -p "$RUNNER_TEMP/sourcemod"
+          curl -sSf "https://sm.alliedmods.net/smdrop/$SOURCEMOD_BRANCH/$name" | tar -xz -C "$RUNNER_TEMP/sourcemod"
+
+      - name: Compile
+        run: SPCOMP="$RUNNER_TEMP/sourcemod/addons/sourcemod/scripting/spcomp64" bash scripting/compile.sh out/plugins
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugins
+          path: out/plugins/*.smx
+
+  package:
+    needs: [windows, linux, plugins]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # the release, on a v* tag
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package
+        run: bash scripting/package.sh artifacts artifacts/plugins package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANCommander.SourceMod.MatchStatistics
+          path: package/
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          (cd package && zip -r "../LANCommander.SourceMod.MatchStatistics-${GITHUB_REF_NAME}.zip" .)
+          gh release create "$GITHUB_REF_NAME" "LANCommander.SourceMod.MatchStatistics-${GITHUB_REF_NAME}.zip" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

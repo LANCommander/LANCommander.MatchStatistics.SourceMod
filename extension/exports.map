@@ -1,0 +1,20 @@
+/* lancommander.ext.so's dynamic symbol table.
+ *
+ * GetSMExtAPI is what SourceMod loads the extension by. Interposer* (and the
+ * voice API, interposer_comms_*) must stay visible too: a second Interposer in
+ * the process -- one LANCommander preloaded -- and the Interposer's own plugins
+ * find this copy's API by name, and its instance election checks a claim with
+ * dladdr against InterposerInstanceMarker.
+ *
+ * Everything else is local, the libc interposers the Interposer's sources
+ * define included: inside an extension loaded RTLD_LOCAL they could not hook
+ * the process anyway, and they stay disabled (API-only attach). */
+{
+  global:
+    GetSMExtAPI;
+    Interposer*;
+    interposer_comms_*;
+
+  local:
+    *;
+};

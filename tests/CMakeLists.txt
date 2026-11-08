@@ -1,0 +1,4 @@
+add_executable(lancommander_payload_tests payload_tests.cpp)
+target_link_libraries(lancommander_payload_tests PRIVATE lancommander_payload)
+
+add_test(NAME payload COMMAND lancommander_payload_tests)

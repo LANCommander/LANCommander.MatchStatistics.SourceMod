@@ -1,0 +1,14 @@
+{
+  "name": "lancommander-sourcemod-matchstatistics",
+  "description": "The LANCommander Interposer's dependencies, which the embedded library brings into the extension.",
+  "dependencies": [
+    {
+      "name": "minhook",
+      "platform": "windows"
+    },
+    "yaml-cpp",
+    "enet",
+    "opus",
+    "miniaudio"
+  ]
+}

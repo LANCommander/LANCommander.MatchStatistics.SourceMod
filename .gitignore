@@ -1,0 +1,17 @@
+# Build trees (one per CMake preset), compiled plugins and packages
+out/
+build/
+plugins/
+package/
+*.smx
+
+# vcpkg manifest-mode installs land under the build tree, but an IDE may put them here
+vcpkg_installed/
+
+# Local overrides, e.g. LANCOMMANDER_INTERPOSER_DIR pointing at a working copy
+CMakeUserPresets.json
+
+# IDE
+.vs/
+.vscode/
+.idea/
