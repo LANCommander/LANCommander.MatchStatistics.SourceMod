@@ -50,24 +50,89 @@ jobs:
           name: ${{ matrix.preset }}
           path: out/${{ matrix.preset }}/bin/Release/lancommander.ext.dll
 
-  # The extension, Linux x86 and x64, in the Interposer's build image (Debian
-  # 12, multilib), so it runs on the glibc of LANCommander's server images.
-  linux:
+  # The Interposer's build image (Debian 12, multilib, pinned vcpkg), cached in
+  # GHCR under a hash of its docker/ directory. It is built and pushed only when
+  # that tag is missing, i.e. when the Dockerfile changes with the submodule.
+  image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the Interposer
+        run: git submodule update --init --depth 1 external/LANCommander.Interposer
+
+      - name: Image reference
+        id: ref
+        run: |
+          hash=$(cd external/LANCommander.Interposer/docker &&
+            find . -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-16)
+          echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/build:$hash" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # Retried: bootstrap-vcpkg.sh downloads the vcpkg binary from GitHub
+      # releases, which sometimes answers 504 for a minute or two. A pull
+      # request from a fork can't push; the linux job builds the image itself
+      # then.
+      - name: Build and push if missing
+        if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+        env:
+          REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          if docker manifest inspect "$REF" > /dev/null 2>&1; then
+            echo "$REF is cached"; exit 0
+          fi
+          for attempt in 1 2 3; do
+            if docker build -f external/LANCommander.Interposer/docker/build.Dockerfile -t "$REF" \
+                --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+                external/LANCommander.Interposer/docker; then
+              docker push "$REF"; exit $?
+            fi
+            echo "::warning::docker build failed (attempt $attempt), retrying"
+            sleep $((attempt * 30))
+          done
+          exit 1
+
+  # The extension, Linux x86 and x64, in the build image, so it runs on the
+  # glibc of LANCommander's server images.
+  linux:
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     strategy:
       matrix:
         preset: [linux-x86, linux-x64]
+    env:
+      IMAGE: ${{ needs.image.outputs.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Build image
-        run: docker build -f external/LANCommander.Interposer/docker/build.Dockerfile -t build external/LANCommander.Interposer/docker
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull image
+        run: |
+          docker pull "$IMAGE" || docker build -f external/LANCommander.Interposer/docker/build.Dockerfile \
+            -t "$IMAGE" external/LANCommander.Interposer/docker
 
       - name: Build and test
         run: |
-          docker run --rm -v "$PWD:/src" -w /src build sh -c '
+          docker run --rm -v "$PWD:/src" -w /src "$IMAGE" sh -c '
             cmake --preset ${{ matrix.preset }} &&
             cmake --build --preset ${{ matrix.preset }}-release &&
             ctest --preset ${{ matrix.preset }}-release'

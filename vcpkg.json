@@ -1,6 +1,7 @@
 {
   "name": "lancommander-sourcemod-matchstatistics",
   "description": "The LANCommander Interposer's dependencies, which the embedded library brings into the extension.",
+  "builtin-baseline": "817892b0ecbc6af994dd6df999c73faf795adbf2",
   "dependencies": [
     {
       "name": "minhook",
