@@ -54,7 +54,9 @@ else()
     # GetSMExtAPI plus Interposer* (exports.map explains why those).
     target_link_options(lancommander.ext PRIVATE
         -static-libstdc++ -static-libgcc
-        "LINKER:--exclude-libs,ALL"
+        # Not ALL: that would hide the embedded Interposer's archive too, and a
+        # symbol --exclude-libs hides the version script cannot make global again.
+        "LINKER:--exclude-libs,libstdc++.a:libgcc.a:libgcc_eh.a:libyaml-cpp.a:libyaml-cppd.a"
         "LINKER:--no-undefined"
         "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map")
     set_property(TARGET lancommander.ext APPEND PROPERTY

@@ -34,8 +34,14 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-# The Interposer, for LANCommander::Interposer::Embedded. EXCLUDE_FROM_ALL: only
-# what the extension links is built, not the Interposer's DLL, tests or plugins.
+# The Interposer, for LANCommander::Interposer::Embedded. Every feature of the
+# embedded library is opt-in (Interposer 1.6.0 and later), and the extension uses
+# match statistics alone; the rest would only add code it never calls.
+# INTERPOSER_EMBEDDED_ONLY defines nothing but the embeddable library -- not the
+# Interposer's DLL, tests or plugins -- and, with voice off, skips the
+# ENet/Opus/miniaudio lookups, which is why vcpkg.json does not list them.
+set(INTERPOSER_EMBEDDED_ONLY   ON CACHE BOOL "" FORCE)
+set(INTERPOSER_FEATURE_MATCHES ON CACHE BOOL "" FORCE)
 add_subdirectory("${LANCOMMANDER_INTERPOSER_DIR}" interposer EXCLUDE_FROM_ALL)
 
 add_subdirectory(extension)
